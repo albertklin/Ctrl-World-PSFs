@@ -1,0 +1,11 @@
+*__pycache__*
+wandb*
+swanlog*
+output*
+dataset_example/merge.py
+predictions*
+synthetic_traj_old*
+old_files*
+video_models_logs*
+model_ckpt*
+synthetic_traj*
