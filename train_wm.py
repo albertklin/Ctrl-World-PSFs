@@ -247,6 +247,8 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt_path', type=str, default=None)
     parser.add_argument('--dataset_root_path', type=str, default=None)
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
+    # dataset_names
+    parser.add_argument('--dataset_names', type=str, default=None)
     args_new = parser.parse_args()
     args = wm_args()
 

@@ -7,17 +7,18 @@
 
 
 <a href='https://arxiv.org/abs/2412.14803'><img src='https://img.shields.io/badge/ArXiv-2412.14803-red'></a> 
-<a href='https://video-prediction-policy.github.io'><img src='https://img.shields.io/badge/Project-Page-Blue'></a> 
+<a href='https://sites.google.com/view/ctrl-world'><img src='https://img.shields.io/badge/Project-Page-Blue'></a> 
 
 </div>
 
-This repo is the official PyTorch implementation for  [**Ctrl-World**](https://arxiv.org/abs/2412.14803) paper.
+This repo is the official PyTorch implementation for  [**Ctrl-World**](https://sites.google.com/view/ctrl-world) paper.
 
 **TL; DR:** Ctrl-World is an action-conditioned world model compatible with modern VLA policies and enables policy-in-the-loop rollouts entirely in imagination, which can be used to evaluate and improve the instruction following ability of VLA. 
 
 <p>
     <img src="synthetic_traj/gallery/ctrl_world.jpg" alt="wild-data" width="100%" />
 </p>
+<!-- synthetic_traj/gallery/ctrl_world.jpg -->
 
 
 
@@ -25,11 +26,11 @@ This repo is the official PyTorch implementation for  [**Ctrl-World**](https://a
 
 **1. Generate synthetic trajectory via replay the actions recorded in DROID datasets.** 
 
-**2. Generate synthetic trajectory via interaction between Ctrl-World and VLA model $\pi_{0.5}$.**
+**2. Generate synthetic trajectory via interaction with advanced VLA model $\pi_{0.5}$.**
 
 **3. Whole training pipeline of Ctrl-World on DROID dataset.**
 
-## 0. Installation 🛠️
+## Installation 🛠️
 
 
 ```bash
@@ -47,7 +48,7 @@ GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
 ```
 
 
-## 1. CheckPoint and Dataset 📷
+## CheckPoint and Dataset 📷
 
 
 | Ckpt name     | Training type | Size |
@@ -55,7 +56,7 @@ GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
 | [clip-vit-base-patch32](https://huggingface.co/openai/clip-vit-base-patch32)  | CLIP text and image encoder    |  ~600M   |
 | [svd](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid)  | Pretrained SVD video diffusion model   | ~8G    |
 | [Ctrl-World](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid) |   Ctrl-World model trained on DROID dataset  | ~8G   |
-| [DROID Dataset]() |   Opensourced DROID dataset, ~95k traj, 564 scene    |  ~370G  |
+| [DROID Dataset](https://huggingface.co/datasets/cadene/droid_1.0.1) |   Opensourced DROID dataset, ~95k traj, 564 scene    |  ~370G  |
 
 
 <!-- **📊 Replay opensourced trajectory:** If you want to replay 
@@ -66,8 +67,8 @@ GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
 
 
 
-## 2. Ctrl-World Inference 📊
-### 📊 (1) Replay the recorded trajectories with world model.
+## Ctrl-World Inference 📊
+### 📊 (1) Replay the recorded trajectories within world model.
 **Task Description:** We start from an initial observation sampled from the recorded trajectories and then generate long trajectories by replaying the recorded actions. At each interaction step, a 1-second action chunk is provided to the world model, and the interaction is repeated multiple times to produce the full rollout. 
 
 We provide a very small subset of DROID dataset in `dataset_example/droid_subset`. After download the ckpt in section 1, you can directly run the following command to replay some long trajectories:
@@ -84,35 +85,45 @@ If you want to replay more trajectories, you need to download and process the or
 
 **Task Description:** We take some snapshot from a new DROID setup and perform policy-in-the-loop rollouts inside world model. Both $\pi_{0.5}$ and Ctrl-World need to zero-shot transferr to new setups.
 
-On our new droid setup, we tried tasks including `task_types = ['pickplace', 'towel_fold', 'wipe_table', 'tissue', 'close_laptop','tissue','drawer','stack']`. We provide some snapshots in `dataset_example/droid_new_setup`.
+On our new droid setup, we tried tasks including `task_types = ['pickplace', 'towel_fold', 'wipe_table', 'tissue', 'close_laptop','stack']`. We provide some snapshots in `dataset_example/droid_new_setup`.
 
 ```bash
-python make_prediction.py --eval --config video_conf/val_svd.yaml --video_model_path ${path to svd-robot} --clip_model_path ${path to clip} --val_dataset_dir video_dataset_instance/xhand --val_idx 0+50+100+150
+CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python rollout_interact_pi.py --task_type pickplace --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt} --pi_ckpt ${path to ctrl-world ckpt} --task_type ${pickplace}
 ```
-
-You can try more video predictions with samples in video_dataset_instance.
-`val_dataset_dir` is the root to datasets and `val_idx` is the sample index. The generated video is save in the folder`video_output`. 
+Or you can set all parameters in `config.py` and directly run `CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python rollout_interact_pi.py`. Since the official $\pi_{0.5}$ are in jax, We need to set XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 to avoild jax occupy too much space on GPU.
 
 
-## Training Ctrl-World
 
-We use DROID dataset as an example to train Ctrl-World
+## Training Ctrl-World 📊
+
+In this section, we provide detailed instructions on how to train Ctrl-World on DROID dataset. If you want to train with custun datasets, you can also follow this instructions with neccesary modifications.
+
 
 ### 🛸 (0) Training requirements
 Our experiments are run on one node with 8 A100/H100 cards.
 
 ### 🛸 (1) Prepare dataset
-(1) Since the video diffusion model are run in latent space of image encoder, we need to first extract the latent sapce of the video. This process will save GPU memory cost and reduce training time. Run `step1_prepare_latent_data.py` to prepare latent. The dataset format should be similar to `video_dataset_instance`. 
-
-We have extract features for something-something-v2, bridge, rt1 and calvin, and you can directly download them from [huggingface dataset:vpp_svd_latent](https://huggingface.co/datasets/yjguo/vpp_svd_latent/tree/main)
-
-(2) After prepare the latent, you need to reset the following parameters in `video_conf/train_svd.yaml`: `dataset_dir` is the root path of datasets; `dataset` is different video dataset used for finetuning and connected with `+`; `prob` is the sample ratio of each dataset. 
-
+(1) Since the video diffusion model are run in latent space of image encoder, we first extract the latent sapce of the video to improve training efficiency. After download the [huggingface DROID datasets](https://huggingface.co/datasets/cadene/droid_1.0.1), you can run the following command to extract latent in parrallel:
 ```bash
-accelerate launch --main_process_port 29506 step1_train_svd.py --config video_conf/train_calvin_svd.yaml --pretrained_model_path ${path to svd-robot}
+accelerate launch dataset_example/extract_latent.py --droid_hf_path ${path to droid} --droid_output_path dataset_example/droid --svd_path ${path to svd}
+```
+The processed data will be saved at `dataset_example/droid`. The structure of this dataset should be same as `dataset_example/droid_subset`, we already included some trajectories in it.
+
+
+(2) After extract the video latent, we can prepare dataset meta information, which create a json file include all items and calculate the normalization of states and actions, which are required during training.
+```bash
+python dataset_meta_info/create_meta_info.py --droid_output_path ${path to processed droid data} --dataset_name droid
 ```
 
-
+### 🛸 (2) Launch training
+After prepare the datasets, you can launch training. You can first test the environment with a small subset of droid we provided in the repo:
+```bash
+WANDB_MODE=offline accelerate launch --main_process_port 29501 train_wm.py --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset
+```
+Then you can launch the training process with whole datasets:
+```bash
+accelerate launch --main_process_port 29501 train_wm.py --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid
+```
 
 ## Acknowledgement
 
