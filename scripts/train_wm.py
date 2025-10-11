@@ -1,4 +1,6 @@
 # from diffusers import StableVideoDiffusionPipeline
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.pipeline_stable_video_diffusion import StableVideoDiffusionPipeline
 from models.pipeline_ctrl_world import CtrlWorldDiffusionPipeline
 from models.unet_spatio_temporal_condition import UNetSpatioTemporalConditionModel

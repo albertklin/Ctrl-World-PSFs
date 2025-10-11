@@ -9,3 +9,4 @@ old_files*
 video_models_logs*
 model_ckpt*
 synthetic_traj*
+dataset_example/droid_subset/annotation/val_old*

@@ -2,14 +2,18 @@
 # from openpi.training import config as config_pi
 # from openpi.policies import policy_config
 # from openpi_client import image_tools
+
+
 import numpy as np
-
-
 from accelerate import Accelerator
 import torch
+
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.pipeline_stable_video_diffusion import StableVideoDiffusionPipeline
 from models.pipeline_ctrl_world import CtrlWorldDiffusionPipeline
 from models.ctrl_world import CrtlWorld
+from models.utils import key_board_control, get_fk_solution
 
 import numpy as np
 import torch
@@ -30,40 +34,6 @@ import sys
 from scipy.spatial.transform import Rotation as R
 
 
-
-################# Franka Panda Forward Kinematics ##############################
-def get_tf_mat(i, dh):
-    a = dh[i][0]
-    d = dh[i][1]
-    alpha = dh[i][2]
-    theta = dh[i][3]
-    q = theta
-
-    return np.array([[np.cos(q), -np.sin(q), 0, a],
-                     [np.sin(q) * np.cos(alpha), np.cos(q) * np.cos(alpha), -np.sin(alpha), -np.sin(alpha) * d],
-                     [np.sin(q) * np.sin(alpha), np.cos(q) * np.sin(alpha), np.cos(alpha), np.cos(alpha) * d],
-                     [0, 0, 0, 1]])
-
-
-def get_fk_solution(joint_angles):
-    dh_params = [[0, 0.333, 0, joint_angles[0]],
-                 [0, 0, -np.pi/2, joint_angles[1]],
-                 [0, 0.316, np.pi/2, joint_angles[2]],
-                 [0.0825, 0, np.pi/2, joint_angles[3]],
-                 [-0.0825, 0.384, -np.pi/2, joint_angles[4]],
-                 [0, 0, np.pi/2, joint_angles[5]],
-                 [0.088, 0, np.pi/2, joint_angles[6]],
-                 [0, 0.107, 0, 0],
-                 [0, 0, 0, -np.pi/4],
-                 [0.0, 0.1034, 0, 0]]
-
-    T = np.eye(4)
-    for i in range(7 + 1):
-        T = T @ get_tf_mat(i, dh_params)
-    return T
-
-##################################################################################
-    
 
 class agent():
     def __init__(self,args):
@@ -99,16 +69,6 @@ class agent():
             self.state_p01 = np.array(data_stat['state_01'])[None,:]
             self.state_p99 = np.array(data_stat['state_99'])[None,:]
         
-        # Since the official Pi-Droid model output joint velocity, and crtl-world is train on cartesian space, we need to load an light-weight adapter to transform joint velocity action into cartesian pose action. 
-        if args.dynamics_model_path is not None:
-            from adapter.train2 import Dynamics
-            self.dynamics_model = Dynamics(action_dim=7, action_num=15, hidden_size=512).to(self.device)
-            self.dynamics_model.load_state_dict(torch.load(args.dynamics_model_path, map_location=self.device))
-
-        # # report cuda memory usage
-        # if torch.cuda.is_available():
-        #     print(f"CUDA memory allocated: {torch.cuda.memory_allocated() / (1024 ** 2):.2f} MB")
-        #     print(f"CUDA memory reserved: {torch.cuda.memory_reserved() / (1024 ** 2):.2f} MB")
 
     def normalize_bound(
         self,
@@ -181,7 +141,6 @@ class agent():
         return car_action, joint_pos, video_dict, video_latent, instruction
 
     def forward_wm(self, action_cond, video_latent_true, video_latent_cond, his_cond=None, text=None):
-        # action_input, video_latent_true, video_latent_first, his_cond=his_cond_input,text=text_i
         args = self.args
         image_cond = video_latent_cond
 
@@ -257,83 +216,6 @@ class agent():
 
         return videos_cat, true_video, videos, latents  # np.uint8:(3, 8, 128, 256, 3) or (3, 8, 192, 320, 3)
 
-
-class Args:
-    ########################### training args ##############################
-    # model paths
-    pretrained_model_path = "/cephfs/shared/llm/stable-video-diffusion-img2vid"
-    clip_model_path = "/cephfs/shared/llm/clip-vit-base-patch32"
-    ckpt_path = '/cephfs/cjyyj/code/video_evaluation/output2/exp33_210_s11/checkpoint-10000.pt'
-
-    # logs parameters
-    debug = False
-    tag = 'doird_multiview'
-    output_dir = f"output/{tag}"
-    wandb_project_name = "droid-memory"
-    wandb_run_name = tag
-    
-
-    # training parameters
-    learning_rate= 1e-5 # 5e-6
-    gradient_accumulation_steps = 1
-    mixed_precision = 'fp16'
-    train_batch_size = 4
-    shuffle = True
-    num_train_epochs = 100
-    max_train_steps = 500000
-    checkpointing_steps = 20000
-    validation_steps = 2500
-    max_grad_norm = 1.0
-    # for val
-    video_num= 10
-
-    # dataset parameters
-    # raw data
-    dataset_root_path = "/cephfs/shared/droid_hf"
-    dataset_names = 'droid_svd_v2'
-    # meta info
-    dataset_cfgs_root_path ='dataset_meta_info'
-    dataset_cfgs = 'droid_svd_v2'
-    prob=[1.0]    
-    annotation_name='annotation'
-    num_workers=4
-
-    ############################ model args ##############################
-
-    # model parameters
-    motion_bucket_id = 127
-    fps = 7
-    guidance_scale = 2 #7.5 #7.5 #7.5 #3.0
-    num_inference_steps = 50
-    decode_chunk_size = 7
-    width = 320
-    height = 192
-    # num history and num future predictions
-    num_frames= 5
-    num_history = 6
-    action_dim = 7
-    text_cond = True
-    dtype = torch.bfloat16 # torch.float32 # torch.bfloat16
-
-    ########################### rollout args ###########################
-    data_stat_path = 'dataset_meta_info/droid/stat.json'
-    val_model_path = ckpt_path 
-    val_dataset_dir = 'dataset_example/droid_subset'
-    val_id = ['199','18599']
-    start_idx = [8,14]*len(val_id)
-    instruction = [""]*len(val_id)
-    pred_step = 5
-    skip_step = 2
-    interact_num = 10
-    task_name = f'Rollouts_droid_replay_{int(num_inference_steps)}_{int(guidance_scale)}'
-    gripper_max = 1.0
-
-    # adapter
-    dynamics_model_path = 'adapter/model2_15_9.pth'
-    policy_type = 'pi05' # choose from ['pi05' # 'pi0' # 'pi0fast']
-    
-
-
         
 if __name__ == "__main__":
     from config import wm_args
@@ -345,7 +227,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_root_path', type=str, default=None)
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
     parser.add_argument('--dataset_names', type=str, default=None)
-    parser.add_argument('--task_type', type=str, default=None)
+    parser.add_argument('--task_type', type=str, default='keyboard')
+    parser.add_argument('--keyboard', type=str, default='ddcu')
     args_new = parser.parse_args()
 
     args = wm_args(task_type=args_new.task_type)
@@ -366,14 +249,17 @@ if __name__ == "__main__":
     num_frames = args.num_frames
     print(f'rollout with {args.task_type}')
 
+    action_keys = args.keyboard  # e.g., 'ddcu' for down, down, close gripper, up
+    interact_num = len(action_keys)
 
-    for val_id_i, text_i, start_idx_i in zip(Args.val_id, Args.instruction, Args.start_idx):
+
+    for val_id_i, text_i, start_idx_i in zip(args.val_id, args.instruction, args.start_idx):
         # read ground truth trajectory informations
         eef_gt, joint_pos_gt, video_dict, video_latents, instruction = Agent.get_traj_info(val_id_i, start_idx=start_idx_i, steps=int(pred_step*interact_num+8))
         text_i = instruction
         print("text_i:",instruction, "eef pose at t=0", eef_gt[0], "joint at t=0", joint_pos_gt[0])
 
-        # create buffers at the beginning of rollout
+        # create buffers and push first frames to history buffer
         predicted_latents = None
         video_to_save = []
         info_to_save = []
@@ -382,7 +268,6 @@ if __name__ == "__main__":
         his_eef = []
         first_latent = torch.cat([v[0] for v in video_latents], dim=1).unsqueeze(0)  # (1, 4, 72, 40)
         assert first_latent.shape == (1, 4, 72, 40), f"Expected first_latent shape (1, 4, 72, 40), got {first_latent.shape}"
-        # push start state to history buffer
         for i in range(Agent.args.num_history*4):
             his_cond.append(first_latent)  # (1, 4, 72, 40)
             his_joint.append(joint_pos_gt[0:1])  # (1, 7)
@@ -408,28 +293,28 @@ if __name__ == "__main__":
             # forward policy
             print("################ policy forward ####################")
             # in the trajectory replay model, we use action recorded in trajetcory
-            action_chunk_pose = eef_gt[start_id:end_id]  # (pred_step, 7)
-            # policy_in_out, joint_pos, action_chunk_pose= Agent.forward_policy(video_first, state_first, joint_first, text=text_i, time_step=i)
-            print("cartersion pose condition", action_chunk_pose)
+            current_pose = his_eef[-1]  # (1, 7)
+            cartesian_pose = key_board_control(current_pose, action_keys[i], task_id=val_id_i)  # (4, 7)
+            print("cartesian space action", cartesian_pose[0]) # output xyz and gripper for debug
+            print("cartesian space action", cartesian_pose[-1]) # output xyz and gripper for debug
             
             print("################ world model forward ################")
-            print(f'traj_id:{val_id_i}, interact step: {i}!!!!!!!!')
+            print(f'traj_id:{val_id_i}, interact step: {i}/{interact_num}')
             # retrive history cond and action cond
             history_idx = [0,0,-8,-6,-4,-2]
-            # history_idx = [0,0,-12,-9,-6,-3]
             his_pose = np.concatenate([his_eef[idx] for idx in history_idx], axis=0)  # (4, 7)
-            action_input = np.concatenate([his_pose, action_chunk_pose], axis=0)
+            action_cond = np.concatenate([his_pose, cartesian_pose], axis=0)
             his_cond_input = torch.cat([his_cond[idx] for idx in history_idx], dim=0).unsqueeze(0)
-            video_latent_first = his_cond[-1]  # (1, 4, 72, 40)
-            assert video_latent_first.shape == (1, 4, 72, 40), f"Expected video_latent_first shape (1, 4, 72, 40), got {video_latent_first.shape}"
-            assert action_input.shape == (int(num_history+num_frames), 7), f"Expected action_input shape ({int(num_history+num_frames)}, 7), got {action_input.shape}"
+            current_latent = his_cond[-1]  # (1, 4, 72, 40)
+            assert current_latent.shape == (1, 4, 72, 40), f"Expected current_latent shape (1, 4, 72, 40), got {current_latent.shape}"
+            assert action_cond.shape == (int(num_history+num_frames), 7), f"Expected action_cond shape ({int(num_history+num_frames)}, 7), got {action_cond.shape}"
             assert his_cond_input.shape == (1, int(num_history), 4, 72, 40), f"Expected his_cond_input shape (1, {int(num_history)}, 72, 40), got {his_cond_input.shape}"
             # forward world model
-            videos_cat, true_videos, video_dict_pred, predicted_latents = Agent.forward_wm(action_input, video_latent_true, video_latent_first, his_cond=his_cond_input,text=text_i if Agent.args.text_cond else None)
+            videos_cat, true_videos, video_dict_pred, predicted_latents = Agent.forward_wm(action_cond, video_latent_true, current_latent, his_cond=his_cond_input,text=text_i if Agent.args.text_cond else None)
 
             print("################ record information ################")
             # push current step to history buffer
-            his_eef.append(action_chunk_pose[pred_step-1:pred_step]) #(1,7)
+            his_eef.append(cartesian_pose[pred_step-1:pred_step]) #(1,7)
             his_cond.append(torch.cat([v[pred_step-1] for v in predicted_latents], dim=1).unsqueeze(0))  # (1, 4, 72, 40)
             if i == interact_num - 1:
                 video_to_save.append(videos_cat)  # save all frames for the last interaction step
@@ -439,9 +324,9 @@ if __name__ == "__main__":
         
         # save rollout video and info with parameters
         video = np.concatenate(video_to_save, axis=0)
-        task_name = Args.task_name
-        text_id = text_i.replace(' ', '_').replace(',', '').replace('.', '').replace('\'', '').replace('\"', '')[:30]
-        videos_dir = Args.val_model_path.split('/')[:-1]
+        task_name = args.task_name
+        text_id = args.keyboard
+        videos_dir = args.val_model_path.split('/')[:-1]
         videos_dir = '/'.join(videos_dir)
         uuid = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_video = f"{args.save_dir}/{task_name}/video/time_{uuid}_traj_{val_id_i}_{start_idx_i}_{pred_step}_{text_id}.mp4"

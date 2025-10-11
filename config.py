@@ -101,10 +101,17 @@ class wm_args:
         # Configure per-task eval sets
         if self.task_type == "replay":
             self.val_dataset_dir = "dataset_example/droid_subset"
-            self.val_id = ["199", "18599"]
-            self.start_idx = [8, 14] * len(self.val_id)
+            self.val_id = ["899", "18599","199",]
+            self.start_idx = [8, 14, 8] * len(self.val_id)
             self.instruction = [""] * len(self.val_id)
             self.task_name = "Rollouts_replay"
+
+        elif self.task_type == "keyboard":
+            self.val_dataset_dir = "dataset_example/droid_subset"
+            self.val_id = ["1799"]*100
+            self.start_idx = [23] * len(self.val_id)
+            self.instruction = [""] * len(self.val_id)
+            self.task_name = "Rollouts_keyboard"
 
         elif self.task_type == "pickplace":
             self.interact_num = 15

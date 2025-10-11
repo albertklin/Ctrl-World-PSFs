@@ -29,41 +29,11 @@ import mediapy
 import sys
 from scipy.spatial.transform import Rotation as R
 
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.pipeline_ctrl_world import CtrlWorldDiffusionPipeline
 from models.ctrl_world import CrtlWorld
-
-# sys.path.append('./')
-# from train_wm import CrtlWorld
-
-def get_tf_mat(i, dh):
-    a = dh[i][0]
-    d = dh[i][1]
-    alpha = dh[i][2]
-    theta = dh[i][3]
-    q = theta
-
-    return np.array([[np.cos(q), -np.sin(q), 0, a],
-                     [np.sin(q) * np.cos(alpha), np.cos(q) * np.cos(alpha), -np.sin(alpha), -np.sin(alpha) * d],
-                     [np.sin(q) * np.sin(alpha), np.cos(q) * np.sin(alpha), np.cos(alpha), np.cos(alpha) * d],
-                     [0, 0, 0, 1]])
-
-
-def get_fk_solution(joint_angles):
-    dh_params = [[0, 0.333, 0, joint_angles[0]],
-                 [0, 0, -np.pi/2, joint_angles[1]],
-                 [0, 0.316, np.pi/2, joint_angles[2]],
-                 [0.0825, 0, np.pi/2, joint_angles[3]],
-                 [-0.0825, 0.384, -np.pi/2, joint_angles[4]],
-                 [0, 0, np.pi/2, joint_angles[5]],
-                 [0.088, 0, np.pi/2, joint_angles[6]],
-                 [0, 0.107, 0, 0],
-                 [0, 0, 0, -np.pi/4],
-                 [0.0, 0.1034, 0, 0]]
-
-    T = np.eye(4)
-    for i in range(7 + 1):
-        T = T @ get_tf_mat(i, dh_params)
-    return T
+from models.utils import key_board_control, get_fk_solution
     
 
 class agent():
@@ -274,29 +244,22 @@ class agent():
         }
         action_chunk = self.policy.infer(example)["actions"] #(10,8) velocity
 
+        # action adapater
+        current_joint = joints[None,:][:,:7]
+        current_gripper = joints[None,:][:,7:]
         if 'pi05' in self.args.policy_type:
             idx = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]  # for dynamics model, we need 15 steps
         else:
             idx = [0,1,2,3,4,5,6,7,8,9,9,9,9,9,9]
-        
         # policy output joint velocity and gripper position
-        joint_vel = action_chunk[:,:7] # (10, 7)
-        gripper_pos = action_chunk[:,7:] # (10, 1)
-        # current_joint
-        current_joint = joints[None,:][:,:7]
-        current_gripper = joints[None,:][:,7:]
-
-        
-        # adapater
-        joint_vel = joint_vel[idx]  # (10, 7)
-        gripper_pos = gripper_pos[idx]  # (10, 1)
+        joint_vel = action_chunk[:,:7] # (15, 7)
+        gripper_pos = action_chunk[:,7:] # (15, 1)
+        joint_vel = joint_vel[idx]  # (15, 7)
+        gripper_pos = gripper_pos[idx]  # (15, 1)
         gripper_max = self.args.gripper_max
-        gripper_pos = np.clip(gripper_pos, 0, gripper_max)  # 0.67 for block grasp 
-
-
+        gripper_pos = np.clip(gripper_pos, 0, gripper_max)
         # calculate future joint positions
         joint_pos = self.dynamics_model(current_joint, joint_vel,None, training=False)
-        
         # fk
         state_fk = []
         joint_pos = np.concatenate([current_joint, joint_pos], axis=0)[:15]  # (15, 7)
@@ -315,14 +278,13 @@ class agent():
         skip = self.args.policy_skip_step
         valid_num = int(skip*(self.args.pred_step-1))
         policy_in_out = {
-            'joint_pos': joint_pos[:valid_num],  # (8, 7)
-            'joint_vel': joint_vel[:valid_num],  # (15, 7)
-            'state_fk': state_fk[:valid_num],  # (15, 7)
+            'joint_pos': joint_pos[:valid_num],  # (12, 7)
+            'joint_vel': joint_vel[:valid_num],  # (12, 7)
+            'state_fk': state_fk[:valid_num],  # (12, 7)
         }
         state_fk_skip = state_fk[::skip][:self.args.pred_step]  # (5, 7)
         joint_pos_skip = joint_pos[::skip][:self.args.pred_step]  # (5, 7)
-        joint_pos_skip = np.concatenate([joint_pos_skip, state_fk_skip[:,-1:]], axis=-1)
-        # print("joint_pos", joint_pos_skip.shape, "state_fk", state_fk_skip.shape)
+        joint_pos_skip = np.concatenate([joint_pos_skip, state_fk_skip[:,-1:]], axis=-1) # (5, 8) add gripper pos
 
         return policy_in_out, joint_pos_skip, state_fk_skip
 
@@ -352,7 +314,6 @@ if __name__ == "__main__":
     args = merge_args(args, args_new)
 
     # create agent
-    # args = Args()
     Agent = agent(args)
     interact_num = args.interact_num
     pred_step = args.pred_step
@@ -383,7 +344,10 @@ if __name__ == "__main__":
         # start rollout
         for i in range(interact_num):
             # get ground truth video latents
-            video_latent_true = [v[int(i*pred_step):int(i*pred_step+num_frames)] for v in video_latents]
+            # video_latent_true = [v[int(i*pred_step):int(i*pred_step+num_frames)] for v in video_latents]
+            start_id = int(i*(pred_step-1))
+            end_id = start_id + pred_step
+            video_latent_true = [v[start_id:end_id] for v in video_latents]
             
             print("################ policy forward ####################")
             # prepare input for policy
@@ -392,13 +356,13 @@ if __name__ == "__main__":
             current_obs = [v[-1] for v in video_dict_pred] 
             # forward policy
             policy_in_out, joint_pos, cartesian_pose= Agent.forward_policy(current_obs, current_pose, current_joint, text=text_i)
-            print("cartesian space action", cartesian_pose) # output xyz and gripper for debug
+            print("cartesian space action", cartesian_pose[0]) # output xyz and gripper for debug
+            print("cartesian space action", cartesian_pose[-1]) # output xyz and gripper for debug
 
             print("################ world model forward ################")
             # prepare input for world model
-            print(f'task: {text_i}, traj_id: {val_id_i}, interaction step: {i}')
+            print(f'task: {text_i}, traj_id: {val_id_i}, interact step: {i}/{interact_num}')
             # history_idx = [0,0,-12,-9,-6,-3]
-            # history_idx = [0,0,0,-6,-4,-2]
             history_idx = args.history_idx
             action_cond = np.concatenate([his_eef[idx] for idx in history_idx], axis=0)
             action_cond = np.concatenate([action_cond, cartesian_pose], axis=0) # (num_history+num_frames, 7)

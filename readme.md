@@ -1,19 +1,19 @@
 <div align="center">
 <h2><center>👉 Ctrl-World: A Controllable Generative World Model for Robot Manipulation </h2>
 
-[Yanjiang Guo*](https://robert-gyj.github.io), [Lucy Xiaoyang Shi*](https://cospui.github.io),  [Jianyu Chen](http://people.iiis.tsinghua.edu.cn/~jychen/), [Chelsea Finn](https://causallu.com)
+[Yanjiang Guo*](https://robert-gyj.github.io), [Lucy Xiaoyang Shi*](https://lucys0.github.io),  [Jianyu Chen](http://people.iiis.tsinghua.edu.cn/~jychen/), [Chelsea Finn](https://ai.stanford.edu/~cbfinn/)
 
  \*Equal contribution; Stanford University, Tsinghua University
 
 
-<a href='https://arxiv.org/abs/2412.14803'><img src='https://img.shields.io/badge/ArXiv-2412.14803-red'></a> 
-<a href='https://sites.google.com/view/ctrl-world'><img src='https://img.shields.io/badge/Project-Page-Blue'></a> 
+<a href='https://arxiv.org/abs/2510.14803'><img src='https://img.shields.io/badge/ArXiv-2510.14803-red'></a> 
+<a href='https://ctrl-world.github.io/'><img src='https://img.shields.io/badge/Project-Page-Blue'></a> 
 
 </div>
 
 This repo is the official PyTorch implementation for  [**Ctrl-World**](https://sites.google.com/view/ctrl-world) paper.
 
-**TL; DR:** Ctrl-World is an action-conditioned world model compatible with modern VLA policies and enables policy-in-the-loop rollouts entirely in imagination, which can be used to evaluate and improve the instruction following ability of VLA. 
+**TL; DR:** Ctrl-World is an action-conditioned world model compatible with modern VLA policies and enables policy-in-the-loop rollouts entirely in imagination, which can be used to evaluate and improve the **instruction following** ability of VLA. 
 
 <p>
     <img src="synthetic_traj/gallery/ctrl_world.jpg" alt="wild-data" width="100%" />
@@ -24,11 +24,15 @@ This repo is the official PyTorch implementation for  [**Ctrl-World**](https://s
 
 ##  Content
 
-**1. Generate synthetic trajectory via replay the actions recorded in DROID datasets.** 
+**1. Generate synthetic trajectory via replaying the recorded actions in DROID dataset.** 
 
-**2. Generate synthetic trajectory via interaction with advanced VLA model $\pi_{0.5}$.**
+**2. Generate synthetic trajectory via key board interactions.**
 
-**3. Whole training pipeline of Ctrl-World on DROID dataset.**
+**3. Generate synthetic trajectory via interaction with advanced VLA model $\pi_{0.5}$.**
+
+**4. A training pipeline of Ctrl-World on DROID dataset.**
+
+
 
 ## Installation 🛠️
 
@@ -55,7 +59,7 @@ GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
 |---------------|------------------|---------|
 | [clip-vit-base-patch32](https://huggingface.co/openai/clip-vit-base-patch32)  | CLIP text and image encoder    |  ~600M   |
 | [svd](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid)  | Pretrained SVD video diffusion model   | ~8G    |
-| [Ctrl-World](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid) |   Ctrl-World model trained on DROID dataset  | ~8G   |
+| [Ctrl-World](https://huggingface.co/yjguo/Ctrl-World) |   Ctrl-World model trained on DROID dataset  | ~8G   |
 | [DROID Dataset](https://huggingface.co/datasets/cadene/droid_1.0.1) |   Opensourced DROID dataset, ~95k traj, 564 scene    |  ~370G  |
 
 
@@ -75,22 +79,37 @@ We provide a very small subset of DROID dataset in `dataset_example/droid_subset
 
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python rollout_replay_traj.py  --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt}
+CUDA_VISIBLE_DEVICES=0 python scripts/rollout_replay_traj.py  --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt}
 ```
-The rollout configuration can be found in `config.py`.
+The rollout configuration can be found in `config.py` in function `__post_init__`.
 If you want to replay more trajectories, you need to download and process the original DROID datasets following the instructions in training section.
 
+### 📊 (2) Interact world model with key board control.
+**Task Description:** We begin from an initial observation sampled from the recorded trajectories and use keyboard commands to control the robot interactively.
 
-### 📊 (2) Interact with $\pi_{0.5}$ model within world model
+Each keyboard command is converted into an action chunk, and the set of valid commands includes:
+{ l: left, r: right, f: forward, b: backward, u: up, d: down, o: open gripper, c: close gripper }.
+
+You can input multiple commands at once, and the system will execute them sequentially in an autoregressive manner.
+For example, you can run the following command:
+
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/rollout_key_board.py  --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt} --task_type keyboard --keyboard lllrrr
+```
+
+### 📊 (3) Interact with $\pi_{0.5}$ model within world model
 
 **Task Description:** We take some snapshot from a new DROID setup and perform policy-in-the-loop rollouts inside world model. Both $\pi_{0.5}$ and Ctrl-World need to zero-shot transferr to new setups.
 
-On our new droid setup, we tried tasks including `task_types = ['pickplace', 'towel_fold', 'wipe_table', 'tissue', 'close_laptop','stack']`. We provide some snapshots in `dataset_example/droid_new_setup`.
+We also need to download official $\pi_{0.5}$-DROID checkpoint following [official openpi repo](https://github.com/Physical-Intelligence/openpi). We provide some snapshots in `dataset_example/droid_new_setup`. These snapshot are from new DROID setups out of opensourced dataset. we tried tasks including `task_types = ['pickplace', 'towel_fold', 'wipe_table', 'tissue', 'close_laptop','stack']`. 
+
+*Claims: We only train Ctrl-World on opensourced DROID dataset and zero-shot transferred to our new DROID setups. The model can evaluate a policy’s instruction-following capability but also can be imprecision in modeling physical interactions.*
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python rollout_interact_pi.py --task_type pickplace --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt} --pi_ckpt ${path to ctrl-world ckpt} --task_type ${pickplace}
+CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python scripts/rollout_interact_pi.py --task_type pickplace --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt} --pi_ckpt ${path to ctrl-world ckpt} --task_type ${pickplace}
 ```
-Or you can set all parameters in `config.py` and directly run `CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python rollout_interact_pi.py`. Since the official $\pi_{0.5}$ are in jax, We need to set XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 to avoild jax occupy too much space on GPU.
+Alternatively, you can configure all parameters in config.py and run `CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python rollout_interact_pi.py`. Since the official $\pi_{0.5}$ policies are implemented in JAX, we need to set XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 to prevent JAX from pre-allocating too much GPU memory.
 
 
 
@@ -118,16 +137,16 @@ python dataset_meta_info/create_meta_info.py --droid_output_path ${path to proce
 ### 🛸 (2) Launch training
 After prepare the datasets, you can launch training. You can first test the environment with a small subset of droid we provided in the repo:
 ```bash
-WANDB_MODE=offline accelerate launch --main_process_port 29501 train_wm.py --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset
+WANDB_MODE=offline accelerate launch --main_process_port 29501 scripts/train_wm.py --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset
 ```
-Then you can launch the training process with whole datasets:
+Then you can launch the training process with whole dataset:
 ```bash
-accelerate launch --main_process_port 29501 train_wm.py --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid
+accelerate launch --main_process_port 29501 scripts/train_wm.py --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid
 ```
 
 ## Acknowledgement
 
-Video prediction policy is developed from the opensourced video foundation model [Stable-Video-Diffusion](https://github.com/Stability-AI/generative-models). We thank the authors for their efforts!
+Ctrl-World is developed from the opensourced video foundation model [Stable-Video-Diffusion](https://github.com/Stability-AI/generative-models). The VLA model used in this repo is from [openpi](https://github.com/Physical-Intelligence/openpi). We thank the authors for their efforts!
 
 
 ## Bibtex 
