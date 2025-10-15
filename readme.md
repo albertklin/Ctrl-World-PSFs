@@ -6,7 +6,7 @@
  \*Equal contribution; Stanford University, Tsinghua University
 
 
-<a href='https://arxiv.org/abs/2510.14803'><img src='https://img.shields.io/badge/ArXiv-2510.14803-red'></a> 
+<a href='https://arxiv.org/abs/2510.10125'><img src='https://img.shields.io/badge/ArXiv-2510.10125-red'></a> 
 <a href='https://ctrl-world.github.io/'><img src='https://img.shields.io/badge/Project-Page-Blue'></a> 
 
 </div>
@@ -26,7 +26,7 @@ This repo is the official PyTorch implementation for  [**Ctrl-World**](https://s
 
 **1. Generate synthetic trajectory via replaying the recorded actions in DROID dataset.** 
 
-**2. Generate synthetic trajectory via key board interactions.**
+**2. Generate synthetic trajectory via keyboard interactions.**
 
 **3. Generate synthetic trajectory via interaction with advanced VLA model $\pi_{0.5}$.**
 
@@ -84,7 +84,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/rollout_replay_traj.py  --dataset_root_pat
 The rollout configuration can be found in `config.py` in function `__post_init__`.
 If you want to replay more trajectories, you need to download and process the original DROID datasets following the instructions in training section.
 
-### 📊 (2) Interact world model with key board control.
+*Tip: One interaction step takes around ~10s on A100 or ~5s on H100.*
+
+### 📊 (2) Interact with world model via keyboard control.
 **Task Description:** We begin from an initial observation sampled from the recorded trajectories and use keyboard commands to control the robot interactively.
 
 Each keyboard command is converted into an action chunk, and the set of valid commands includes:
@@ -104,7 +106,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/rollout_key_board.py  --dataset_root_path 
 
 We also need to download official $\pi_{0.5}$-DROID checkpoint following [official openpi repo](https://github.com/Physical-Intelligence/openpi). We provide some snapshots in `dataset_example/droid_new_setup`. These snapshot are from new DROID setups out of opensourced dataset. we tried tasks including `task_types = ['pickplace', 'towel_fold', 'wipe_table', 'tissue', 'close_laptop','stack']`. 
 
-*Claims: We only train Ctrl-World on opensourced DROID dataset and zero-shot transferred to our new DROID setups. The model can evaluate a policy’s instruction-following capability but also can be imprecision in modeling physical interactions.*
+*Claims: We only train Ctrl-World on opensourced DROID dataset and zero-shot transferred to our new DROID setups. The model can evaluate a policy’s instruction-following capability but also can be imprecise in modeling physical interactions.*
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 python scripts/rollout_interact_pi.py --task_type pickplace --dataset_root_path dataset_example --dataset_meta_info_path dataset_meta_info --dataset_names droid_subset --svd_model_path ${path to svd folder} --clip_model_path ${path to clip folder} --ckpt_path ${path to ctrl-world ckpt} --pi_ckpt ${path to ctrl-world ckpt} --task_type ${pickplace}
@@ -115,11 +117,11 @@ Alternatively, you can configure all parameters in config.py and run `CUDA_VISIB
 
 ## Training Ctrl-World 📊
 
-In this section, we provide detailed instructions on how to train Ctrl-World on DROID dataset. If you want to train with custun datasets, you can also follow this instructions with neccesary modifications.
+In this section, we provide detailed instructions on how to train Ctrl-World on DROID dataset. If you want to train with custum datasets, you can also follow this instructions with neccesary modifications.
 
 
 ### 🛸 (0) Training requirements
-Our experiments are run on one node with 8 A100/H100 cards.
+Our experiments are run on one/two nodes each with 8 A100/H100 cards.
 
 ### 🛸 (1) Prepare dataset
 (1) Since the video diffusion model are run in latent space of image encoder, we first extract the latent sapce of the video to improve training efficiency. After download the [huggingface DROID datasets](https://huggingface.co/datasets/cadene/droid_1.0.1), you can run the following command to extract latent in parrallel:
@@ -152,9 +154,10 @@ Ctrl-World is developed from the opensourced video foundation model [Stable-Vide
 ## Bibtex 
 If you find our work helpful, please leave us a star and cite our paper. Thank you!
 ```
-@article{hu2024video,
-  title={Video Prediction Policy: A Generalist Robot Policy with Predictive Visual Representations},
-  author={Hu, Yucheng and Guo, Yanjiang and Wang, Pengchao and Chen, Xiaoyu and Wang, Yen-Jen and Zhang, Jianke and Sreenath, Koushil and Lu, Chaochao and Chen, Jianyu},
-  journal={arXiv preprint arXiv:2412.14803},
-  year={2024}
+@article{guo2025ctrl,
+  title={Ctrl-World: A Controllable Generative World Model for Robot Manipulation},
+  author={Guo, Yanjiang and Shi, Lucy Xiaoyang and Chen, Jianyu and Finn, Chelsea},
+  journal={arXiv preprint arXiv:2510.10125},
+  year={2025}
 }
+```

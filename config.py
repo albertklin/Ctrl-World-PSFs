@@ -108,10 +108,18 @@ class wm_args:
 
         elif self.task_type == "keyboard":
             self.val_dataset_dir = "dataset_example/droid_subset"
-            self.val_id = ["1799"]*100
+            self.val_id = ["1799"]
             self.start_idx = [23] * len(self.val_id)
             self.instruction = [""] * len(self.val_id)
             self.task_name = "Rollouts_keyboard"
+
+        # elif self.task_type == "keyboard2":
+        #     self.val_dataset_dir = "/cephfs/shared/droid_hf/droid_svd_v2"
+        #     self.val_id = ["1499"]*100
+        #     self.start_idx = [8] * len(self.val_id) # 2599 8 #9499 10
+        #     self.instruction = [""] * len(self.val_id)
+        #     self.task_name = "Rollouts_keyboard_1499"
+        #     self.ineraction_num = 7
 
         elif self.task_type == "pickplace":
             self.interact_num = 15
