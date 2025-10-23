@@ -1,4 +1,3 @@
-# from diffusers import StableVideoDiffusionPipeline
 from models.pipeline_stable_video_diffusion import StableVideoDiffusionPipeline
 from models.pipeline_ctrl_world import CtrlWorldDiffusionPipeline
 from models.unet_spatio_temporal_condition import UNetSpatioTemporalConditionModel
@@ -107,20 +106,59 @@ class Action_encoder2(nn.Module):
         return action # (B, 1, hidden_size) or (B, T, hidden_size) if frame_level_cond
 
 
+def load_svd_pipeline_local(repo_dir: str) -> StableVideoDiffusionPipeline:
+        """Load Stable Video Diffusion components directly from a local diffusers-format folder
+        without relying on Diffusers' automatic pipeline factory (which may be missing in newer versions).
+
+        Expected layout inside `repo_dir`:
+            - feature_extractor/ (CLIPImageProcessor)
+            - image_encoder/ (CLIPVisionModelWithProjection)
+            - scheduler/ (EulerDiscreteScheduler)
+            - unet/ (UNetSpatioTemporalConditionModel)
+            - vae/ (AutoencoderKLTemporalDecoder)
+        """
+        from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
+        from diffusers.models import AutoencoderKLTemporalDecoder
+        from diffusers.schedulers import EulerDiscreteScheduler
+        from models.unet_spatio_temporal_condition import UNetSpatioTemporalConditionModel as LocalUNet
+
+        # Basic existence checks for expected subfolders
+        for sub in ("feature_extractor", "image_encoder", "scheduler", "unet", "vae"):
+            if not os.path.isdir(os.path.join(repo_dir, sub)):
+                raise FileNotFoundError(
+                    f"Stable Video Diffusion folder missing '{sub}' subfolder: {os.path.join(repo_dir, sub)}"
+                )
+
+        fe = CLIPImageProcessor.from_pretrained(f"{repo_dir}/feature_extractor")
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(f"{repo_dir}/image_encoder")
+        scheduler = EulerDiscreteScheduler.from_pretrained(f"{repo_dir}/scheduler")
+        # Prefer using from_pretrained since our LocalUNet matches architecture
+        unet = LocalUNet.from_pretrained(f"{repo_dir}/unet")
+        vae = AutoencoderKLTemporalDecoder.from_pretrained(f"{repo_dir}/vae")
+
+        return StableVideoDiffusionPipeline(
+                vae=vae,
+                image_encoder=image_encoder,
+                unet=unet,
+                scheduler=scheduler,
+                feature_extractor=fe,
+        )
+
+
 class CrtlWorld(nn.Module):
     def __init__(self, args):
         super(CrtlWorld, self).__init__()
 
         self.args = args
 
-        # load from pretrained stable video diffusion
-        self.pipeline = StableVideoDiffusionPipeline.from_pretrained(args.pretrained_model_path)
-        # repalce the unet to support frame_level pose condition
+        # load from pretrained stable video diffusion (local loader to avoid factory issues)
+        self.pipeline = load_svd_pipeline_local(args.pretrained_model_path)
+        # replace the unet to support frame_level pose condition
         print("replace the unet to support action condition and frame_level pose!")
         unet = UNetSpatioTemporalConditionModel()
         unet.load_state_dict(self.pipeline.unet.state_dict(), strict=False)
         self.pipeline.unet = unet
-        
+
         self.unet = self.pipeline.unet
         self.vae = self.pipeline.vae
         self.image_encoder = self.pipeline.image_encoder

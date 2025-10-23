@@ -58,9 +58,29 @@ class agent():
         #     raise ValueError(f"Unknown policy type: {args.policy_type}")
         # self.policy = policy_config.create_trained_policy(config, checkpoint_dir)
 
-        # load ctrl-world model        
+        # load ctrl-world model
         self.model = CrtlWorld(args)
-        self.model.load_state_dict(torch.load(args.val_model_path))
+        # Resolve checkpoint path with a helpful fallback
+        ckpt_path = args.val_model_path
+        if not os.path.isfile(ckpt_path):
+            # fall back to --ckpt_path if provided and exists
+            if getattr(args, 'ckpt_path', None) and os.path.isfile(args.ckpt_path):
+                ckpt_path = args.ckpt_path
+            else:
+                # Try a sensible local default relative to repo
+                default_local = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'checkpoints','Ctrl-World','latest.ckpt'
+                )
+                if os.path.isfile(default_local):
+                    ckpt_path = default_local
+                else:
+                    raise FileNotFoundError(
+                        f"Checkpoint not found. Tried val_model_path={args.val_model_path}, "
+                        f"ckpt_path={getattr(args,'ckpt_path', None)}, default_local={default_local}"
+                    )
+        print(f"Loading Ctrl-World checkpoint from: {ckpt_path}")
+        self.model.load_state_dict(torch.load(ckpt_path, map_location='cpu'))
         self.model.to(self.accelerator.device).to(self.dtype)
         self.model.eval()
         print("load world model success")
@@ -221,9 +241,16 @@ if __name__ == "__main__":
     from config import wm_args
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('--svd_model_path', type=str, default=None)
+    # Preferred flag name (matches wm_args.pretrained_model_path)
+    parser.add_argument('--pretrained_model_path', type=str, default=None,
+                        help='Path or Hugging Face repo id for StableVideoDiffusion (overrides config.pretrained_model_path)')
+    # Backward-compatible alias
+    parser.add_argument('--svd_model_path', type=str, default=None,
+                        help='Deprecated alias for --pretrained_model_path')
     parser.add_argument('--clip_model_path', type=str, default=None)
     parser.add_argument('--ckpt_path', type=str, default=None)
+    parser.add_argument('--val_model_path', type=str, default=None,
+                        help='Path to model state_dict to load into CtrlWorld (defaults to ckpt_path if provided)')
     parser.add_argument('--dataset_root_path', type=str, default=None)
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
     parser.add_argument('--dataset_names', type=str, default=None)
@@ -233,12 +260,30 @@ if __name__ == "__main__":
     args = wm_args(task_type=args_new.task_type)
 
     def merge_args(args, new_args):
+        # Apply direct CLI overrides first
         for k, v in new_args.__dict__.items():
             if v is not None:
                 args.__dict__[k] = v
+        # If user supplied only the deprecated alias, honor it and override the default
+        if getattr(new_args, 'pretrained_model_path', None) is None and getattr(new_args, 'svd_model_path', None) is not None:
+            args.pretrained_model_path = new_args.svd_model_path
+        # If user provided ckpt_path but not val_model_path, mirror it so the loader uses the override
+        if getattr(new_args, 'ckpt_path', None) is not None and getattr(new_args, 'val_model_path', None) is None:
+            args.val_model_path = new_args.ckpt_path
+        # Derive data_stat_path from dataset_meta_info_path if provided
+        if getattr(new_args, 'dataset_meta_info_path', None):
+            args.data_stat_path = os.path.join(new_args.dataset_meta_info_path, 'droid', 'stat.json')
+        # Adjust val_dataset_dir to be rooted under dataset_root_path when task uses local examples
+        if getattr(new_args, 'dataset_root_path', None) and args.task_type in ['replay','keyboard','pickplace','towel_fold','wipe_table','tissue','close_laptop','stack']:
+            # For replay/keyboard, data lives under droid_subset; for others under droid_new_setup
+            sub = 'droid_subset' if args.task_type in ['replay','keyboard'] else 'droid_new_setup'
+            args.val_dataset_dir = os.path.join(new_args.dataset_root_path, sub)
         return args
     
     args = merge_args(args, args_new)
+    print(f"Resolved pretrained_model_path: {args.pretrained_model_path}")
+    if getattr(args, 'svd_model_path', None) is not None:
+        print("Note: --svd_model_path is deprecated; prefer --pretrained_model_path.")
 
     # create rollout agent
     Agent = agent(args)

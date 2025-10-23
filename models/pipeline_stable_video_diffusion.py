@@ -26,7 +26,12 @@ from diffusers.image_processor import PipelineImageInput
 # import from our own models instead  of diffusers
 # from diffusers.models import AutoencoderKLTemporalDecoder, UNetSpatioTemporalConditionModel
 from diffusers.models import AutoencoderKLTemporalDecoder
+# Accept either our customized UNet or the original diffusers UNet to avoid type mismatches when loading from
+# an official SVD checkpoint, then swapping to our customized module later.
 from models.unet_spatio_temporal_condition import UNetSpatioTemporalConditionModel
+from diffusers.models.unets.unet_spatio_temporal_condition import (
+    UNetSpatioTemporalConditionModel as HFUNetSpatioTemporalConditionModel,
+)
 
 from diffusers.schedulers import EulerDiscreteScheduler
 from diffusers.utils import BaseOutput, is_torch_xla_available, logging, replace_example_docstring
@@ -177,7 +182,8 @@ class StableVideoDiffusionPipeline(DiffusionPipeline):
         self,
         vae: AutoencoderKLTemporalDecoder,
         image_encoder: CLIPVisionModelWithProjection,
-        unet: UNetSpatioTemporalConditionModel,
+        # Allow union of our UNet and HF UNet to satisfy Diffusers' component type validation
+        unet: "UNetSpatioTemporalConditionModel | HFUNetSpatioTemporalConditionModel",
         scheduler: EulerDiscreteScheduler,
         feature_extractor: CLIPImageProcessor,
     ):

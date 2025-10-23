@@ -58,9 +58,27 @@ class agent():
         #     raise ValueError(f"Unknown policy type: {args.policy_type}")
         # self.policy = policy_config.create_trained_policy(config, checkpoint_dir)
 
-        # load ctrl-world model        
+        # load ctrl-world model
         self.model = CrtlWorld(args)
-        self.model.load_state_dict(torch.load(args.val_model_path))
+        # Resolve checkpoint path with a helpful fallback
+        ckpt_path = args.val_model_path
+        if not os.path.isfile(ckpt_path):
+            if getattr(args, 'ckpt_path', None) and os.path.isfile(args.ckpt_path):
+                ckpt_path = args.ckpt_path
+            else:
+                default_local = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'checkpoints','Ctrl-World','latest.ckpt'
+                )
+                if os.path.isfile(default_local):
+                    ckpt_path = default_local
+                else:
+                    raise FileNotFoundError(
+                        f"Checkpoint not found. Tried val_model_path={args.val_model_path}, "
+                        f"ckpt_path={getattr(args,'ckpt_path', None)}, default_local={default_local}"
+                    )
+        print(f"Loading Ctrl-World checkpoint from: {ckpt_path}")
+        self.model.load_state_dict(torch.load(ckpt_path, map_location='cpu'))
         self.model.to(self.accelerator.device).to(self.dtype)
         self.model.eval()
         print("load world model success")
@@ -221,9 +239,16 @@ if __name__ == "__main__":
     from config import wm_args
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('--svd_model_path', type=str, default=None)
+    # Preferred
+    parser.add_argument('--pretrained_model_path', type=str, default=None,
+                        help='Path or HF repo id for StableVideoDiffusion (overrides config.pretrained_model_path)')
+    # Back-compat alias
+    parser.add_argument('--svd_model_path', type=str, default=None,
+                        help='Deprecated alias for --pretrained_model_path')
     parser.add_argument('--clip_model_path', type=str, default=None)
     parser.add_argument('--ckpt_path', type=str, default=None)
+    parser.add_argument('--val_model_path', type=str, default=None,
+                        help='Path to model state_dict to load into CtrlWorld (defaults to ckpt_path if provided)')
     parser.add_argument('--dataset_root_path', type=str, default=None)
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
     parser.add_argument('--dataset_names', type=str, default=None)
@@ -234,14 +259,33 @@ if __name__ == "__main__":
     args = wm_args(task_type=args_new.task_type)
 
     def merge_args(args, new_args):
+        # Apply CLI overrides first
         for k, v in new_args.__dict__.items():
             if v is not None:
                 args.__dict__[k] = v
+        # Map deprecated alias if preferred flag omitted
+        if getattr(new_args, 'pretrained_model_path', None) is None and getattr(new_args, 'svd_model_path', None) is not None:
+            args.pretrained_model_path = new_args.svd_model_path
+        # Mirror ckpt_path to val_model_path if only ckpt_path provided
+        if getattr(new_args, 'ckpt_path', None) is not None and getattr(new_args, 'val_model_path', None) is None:
+            args.val_model_path = new_args.ckpt_path
+        # Derive data_stat_path from dataset_meta_info_path if provided
+        if getattr(new_args, 'dataset_meta_info_path', None):
+            args.data_stat_path = os.path.join(new_args.dataset_meta_info_path, 'droid', 'stat.json')
+        # Adjust val_dataset_dir based on dataset_root_path
+        if getattr(new_args, 'dataset_root_path', None):
+            # keyboard uses droid_subset like replay
+            args.val_dataset_dir = os.path.join(new_args.dataset_root_path, 'droid_subset')
         return args
     
     args = merge_args(args, args_new)
 
     # create rollout agent
+    # Log resolved SVD path for clarity
+    print(f"Resolved pretrained_model_path: {args.pretrained_model_path}")
+    if getattr(args, 'svd_model_path', None) is not None:
+        print("Note: --svd_model_path is deprecated; prefer --pretrained_model_path.")
+
     Agent = agent(args)
     interact_num = args.interact_num
     pred_step = args.pred_step
