@@ -253,6 +253,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
     parser.add_argument('--dataset_names', type=str, default=None)
     parser.add_argument('--task_type', type=str, default='keyboard')
+    parser.add_argument('--save_dir', type=str, default=None,
+                        help='Directory to save outputs (defaults to config.save_dir)')
     parser.add_argument('--keyboard', type=str, default='ddcu')
     args_new = parser.parse_args()
 

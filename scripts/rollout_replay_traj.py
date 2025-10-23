@@ -255,6 +255,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
     parser.add_argument('--dataset_names', type=str, default=None)
     parser.add_argument('--task_type', type=str, default='replay')
+    parser.add_argument('--save_dir', type=str, default=None,
+                        help='Directory to save outputs (defaults to config.save_dir)')
     args_new = parser.parse_args()
 
     args = wm_args(task_type=args_new.task_type)
