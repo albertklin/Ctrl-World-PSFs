@@ -27,7 +27,7 @@ import math
 
 def main(args):
     logger = get_logger(__name__, log_level="INFO")
-    swanlab.sync_wandb()
+    # swanlab.sync_wandb()  # use wandb instead
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
@@ -43,7 +43,14 @@ def main(args):
         model.load_state_dict(state_dict, strict=True)
     model.to(accelerator.device)
     model.train()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    
+    # Use 8-bit optimizer for smoke test to save memory
+    if args.smoke_test:
+        import bitsandbytes as bnb
+        optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=args.learning_rate)
+        print("Using 8-bit AdamW optimizer for smoke test")
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
 
     # logs
     if accelerator.is_main_process:
@@ -251,16 +258,35 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_meta_info_path', type=str, default=None)
     # dataset_names
     parser.add_argument('--dataset_names', type=str, default=None)
+    parser.add_argument('--smoke_test', action='store_true', help='Enable smoke test mode for limited GPU memory')
     args_new = parser.parse_args()
     args = wm_args()
 
     def merge_args(args, new_args):
         for k, v in new_args.__dict__.items():
             if v is not None:
-                args.__dict__[k] = v
+                # Map svd_model_path to pretrained_model_path for compatibility
+                if k == 'svd_model_path':
+                    args.__dict__['pretrained_model_path'] = v
+                else:
+                    args.__dict__[k] = v
         return args
     
     args = merge_args(args, args_new)
+    
+    # Apply smoke test optimizations if enabled
+    if args.smoke_test:
+        print("=" * 60)
+        print("SMOKE TEST MODE ENABLED - Applying memory optimizations")
+        print("=" * 60)
+        args.train_batch_size = 1
+        args.num_frames = 3
+        args.num_history = 3
+        print(f"  - Batch size: {args.train_batch_size} (reduced from 4)")
+        print(f"  - Num frames: {args.num_frames} (reduced from 5)")
+        print(f"  - Num history: {args.num_history} (reduced from 6)")
+        print(f"  - Using 8-bit optimizer and FP16 mixed precision")
+        print("=" * 60)
 
     main(args)
 
